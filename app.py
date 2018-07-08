@@ -2,6 +2,7 @@ from flask import Flask
 from flask import jsonify
 from flask import request
 from flask_pymongo import PyMongo
+from bson.objectid import ObjectId
 
 from bson import json_util
 import json
@@ -17,10 +18,20 @@ mongo = PyMongo(app)
 
 @app.route('/schema/<nom_schema>', methods=['POST'])
 def add_schema(nom_schema):
-    collection = mongo.db.bibou
-    schema_id = collection.insert(request.json)
-    new_schema = collection.find_one({'_id': schema_id})
-    return "ok"
+    if nom_schema in mongo.db.collection_names() :
+        return "{} déjà dans la base.".format(nom_schema), 400
+    collection = mongo.db[nom_schema]
+    request.json["_id"] = "schema"
+    collection.insert(request.json)
+    return jsonify(request.json)
+
+@app.route('/<nom_schema>', methods=['POST'])
+def add_data(nom_schema):
+    if nom_schema not in mongo.db.collection_names() :
+        return "{} n'existe pas dans la base dans la base. Avez vous déclaré un schéma?".format(nom_schema), 400
+    collection = mongo.db[nom_schema]
+    schema = collection.find_one({'_id': ObjectId("schema")})
+    return jsonify(schema)
 
 
 @app.route('/star', methods=['GET'])
