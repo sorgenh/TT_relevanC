@@ -1,0 +1,17 @@
+version: '2'
+services:
+    webservice:
+        build: .
+        container_name: "tt_relevanc_ws"
+        image: tt_relevanc_ws:latest
+        ports:
+            - 5500:5500
+        links:
+            - mongodb
+        depends_on:
+            - mongodb
+    mongodb:
+        image: mongo:latest
+        container_name: "mongodb"
+        ports:
+            - 27017:27017

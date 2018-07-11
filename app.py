@@ -27,7 +27,7 @@ from ws_utils import *
 app = Flask(__name__)
 
 app.config['MONGO_DBNAME'] = 'TT_relevanC'
-app.config['MONGO_URI'] = 'mongodb://localhost:27017/TT_relevanC'
+app.config['MONGO_URI'] = 'mongodb://mongodb:27017/TT_relevanC'
 
 mongo = PyMongo(app)
 
@@ -52,7 +52,12 @@ def add_schema(nom_schema):
              "message": "{} déjà dans la base.".format(nom_schema)})
         return "{} déjà dans la base.".format(nom_schema), 400
     collection = mongo.db[nom_schema]
-    request.json["_id"] = "schema"
+    if "_id" not in request.json:
+        request.json["_id"] = "schema"
+    else:
+        log({"datetime": str(now()), "schema": nom_schema, "type_interaction": "declaration_schema", "statut": "NOK",
+             "message": "Tentative de declaration de {} avec un champ _id.".format(nom_schema)})
+        return "{} ne peut pas être créé, une colonne ne peut pas s'appeller _id.".format(nom_schema), 400
     collection.insert(request.json)
     log({"datetime": str(now()), "schema": nom_schema, "type_interaction": "declaration_schema", "statut": "OK",
          "message": "Déclaration de {} dans la base.".format(nom_schema)})
@@ -130,4 +135,4 @@ def get_data(nom_schema):
 
 
 if __name__ == '__main__':
-    app.run(debug=True,port=5500)
+    app.run(debug=True,port=5500,host= '0.0.0.0')
