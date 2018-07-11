@@ -2,11 +2,13 @@ from flask import Flask
 from flask import jsonify
 from flask import request
 from flask_pymongo import PyMongo
-from flask_pymongo import MongoClient
-from bson.objectid import ObjectId
 
-from bson import json_util
+
 import json
+import datetime
+now = datetime.datetime.now
+
+from ws_utils import *
 
 app = Flask(__name__)
 
@@ -16,67 +18,76 @@ app.config['MONGO_URI'] = 'mongodb://localhost:27017/TT_relevanC'
 mongo = PyMongo(app)
 
 
+def log(to_log):
+    collection = mongo.db['__log']
+    collection.insert(to_log)
+
+
 @app.route('/schema/<nom_schema>', methods=['POST'])
 def add_schema(nom_schema):
-    if nom_schema in mongo.db.collection_names() :
+    if nom_schema in mongo.db.collection_names():
+        log({"datetime": str(now()), "schema": nom_schema, "type_interaction": "declaration_schema", "statut": "NOK",
+             "message": "{} déjà dans la base.".format(nom_schema)})
         return "{} déjà dans la base.".format(nom_schema), 400
     collection = mongo.db[nom_schema]
     request.json["_id"] = "schema"
     collection.insert(request.json)
-    return jsonify(request.json)
+    log({"datetime": str(now()), "schema": nom_schema, "type_interaction": "declaration_schema", "statut": "OK",
+         "message": "Déclaration de {} dans la base.".format(nom_schema)})
+    return "Déclaration de {} dans la base.\n".format(nom_schema)+jsonify(request.json)
 
 
 @app.route('/<nom_schema>', methods=['POST'])
 def add_data(nom_schema):
     if nom_schema not in mongo.db.collection_names() :
-        return "{} n'existe pas dans la base dans la base. Avez vous déclaré un schéma?".format(nom_schema), 400
+        log({"datetime": str(now()), "schema": nom_schema, "type_interaction": "insertion", "statut": "NOK",
+             "message": "{} n'existe pas dans la base.".format(nom_schema)})
+        return "{} n'existe pas dans la base. Avez vous déclaré un schéma?".format(nom_schema), 400
     collection = mongo.db[nom_schema]
-    schema = collection.find_one({'_id': "schema"})
+    schema = collection.find_one({"_id": "schema"})
     del schema["_id"]
-    for colonne in schema:
-        print("{} = {}".format(colonne,schema[colonne]))
+
     input_data = request.get_data(as_text=True).replace("\r","")
     input_data = input_data.split("\n")
-
-    if not check_header(schema,input_data[0]):
+    header = input_data.pop(0)
+    if not check_header(schema, header):
+        log({"datetime": str(now()), "schema": nom_schema, "type_interaction": "insertion", "statut": "NOK",
+             "message": "Le header fournit ne correspond pas au schema."})
         return "Le header fournit ne correspond pas au schema \n {}".format(json.dumps(schema)), 400
-
-    for ligne in  input_data:
-        print(ligne)
-
-    return jsonify(schema)
-
-
-@app.route('/star', methods=['GET'])
-def get_all_stars():
-    star = mongo.db.stars
-    output = []
-    for s in star.find():
-        output.append({'name': s['name'], 'distance': s['distance']})
-    return jsonify({'result': output})
+    nb_ok = 0
+    nb_nok = 0
+    for line in input_data:
+        if check_line(schema, line):
+            collection.insert({"data": line})
+            nb_ok += 1
+        else:
+            nb_nok += 1
+    log({"datetime": str(now()), "schema": nom_schema, "type_interaction": "insertion", "statut": "OK",
+         "nb_lignes_ok": nb_ok, "nb_lignes_nok": nb_nok})
+    return "Nombre de lignes inserées dans le schema {} : {}\n" \
+           "Nombre de lignes au mauvais format ou avec valeurs manquantes : {}".format(nom_schema, nb_ok, nb_nok)
 
 
-@app.route('/star/<string:name>', methods=['GET'])
-def get_one_star(name):
-    star = mongo.db.stars
-    print(name)
-    s = star.find_one({'name': name})
-    if s:
-        output = {'name': s['name'], 'distance': s['distance']}
-    else:
-        output = "No such name"
-    return jsonify({'result': output})
+@app.route('/<nom_schema>', methods=['GET'])
+def get_data(nom_schema):
+    if nom_schema not in mongo.db.collection_names() :
+        log({"datetime": str(now()), "schema": nom_schema, "type_interaction": "affichage_donnees", "statut": "NOK",
+             "message": "{} n'existe pas dans la base.".format(nom_schema)})
+        return "{} n'existe pas dans la base. Avez vous déclaré un schéma?".format(nom_schema), 400
+    collection = mongo.db[nom_schema]
 
+    schema = collection.find_one({"_id": "schema"})
+    del schema["_id"]
 
-@app.route('/star', methods=['POST'])
-def add_star():
-    star = mongo.db.stars
-    name = request.json['name']
-    distance = request.json['distance']
-    star_id = star.insert({'name': name, 'distance': distance})
-    new_star = star.find_one({'_id': star_id})
-    output = {'name': new_star['name'], 'distance': new_star['distance']}
-    return jsonify({'result': output})
+    result = get_header(schema) + "\n"
+
+    cursor = collection.find({"_id": {"$ne": "schema"}})
+    for document in cursor:
+        if document["_id"] != "schema":
+            result += document["data"] + "\n"
+    log({"datetime": str(now()), "schema": nom_schema, "type_interaction": "affichage_donnees", "statut": "OK",
+         "message": "Affichage des données de {}.".format(nom_schema)})
+    return result
 
 
 if __name__ == '__main__':
