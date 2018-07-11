@@ -2,11 +2,11 @@ from flask import Flask
 from flask import jsonify
 from flask import request
 from flask_pymongo import PyMongo
+from flask_pymongo import MongoClient
 from bson.objectid import ObjectId
 
 from bson import json_util
 import json
-
 
 app = Flask(__name__)
 
@@ -25,12 +25,25 @@ def add_schema(nom_schema):
     collection.insert(request.json)
     return jsonify(request.json)
 
+
 @app.route('/<nom_schema>', methods=['POST'])
 def add_data(nom_schema):
     if nom_schema not in mongo.db.collection_names() :
         return "{} n'existe pas dans la base dans la base. Avez vous déclaré un schéma?".format(nom_schema), 400
     collection = mongo.db[nom_schema]
-    schema = collection.find_one({'_id': ObjectId("schema")})
+    schema = collection.find_one({'_id': "schema"})
+    del schema["_id"]
+    for colonne in schema:
+        print("{} = {}".format(colonne,schema[colonne]))
+    input_data = request.get_data(as_text=True).replace("\r","")
+    input_data = input_data.split("\n")
+
+    if not check_header(schema,input_data[0]):
+        return "Le header fournit ne correspond pas au schema \n {}".format(json.dumps(schema)), 400
+
+    for ligne in  input_data:
+        print(ligne)
+
     return jsonify(schema)
 
 
@@ -67,4 +80,4 @@ def add_star():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True,port=5500)
